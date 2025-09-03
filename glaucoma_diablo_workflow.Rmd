@@ -1,0 +1,95 @@
+
+---
+title: "Glaucoma Biomarker Discovery using DIABLO"
+author: "tjmb03"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ️️ Goal
+
+Identify multi-omics biomarkers associated with **primary open-angle glaucoma (POAG)** for potential diagnostic use.
+
+##  Load Required Package
+
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("mixOmics")
+
+library(mixOmics)
+```
+
+## 🧬 Simulate Multi-Omics Data
+
+```{r}
+set.seed(123)
+
+n <- 100  # 50 POAG, 50 controls
+Y <- factor(rep(c("POAG", "Control"), each = 50))
+
+mRNA <- matrix(rnorm(n * 1000), nrow = n, ncol = 1000)
+colnames(mRNA) <- paste0("gene_", 1:1000)
+
+proteomics <- matrix(rnorm(n * 200), nrow = n, ncol = 200)
+colnames(proteomics) <- paste0("prot_", 1:200)
+
+metabolomics <- matrix(rnorm(n * 50), nrow = n, ncol = 50)
+colnames(metabolomics) <- paste0("met_", 1:50)
+
+X <- list(mRNA = mRNA, proteomics = proteomics, metabolomics = metabolomics)
+```
+
+## 🔧 Define Design and DIABLO Model
+
+```{r}
+design <- matrix(1, ncol = 3, nrow = 3)
+diag(design) <- 0
+colnames(design) <- rownames(design) <- names(X)
+
+keepX <- list(mRNA = c(30, 30), proteomics = c(20, 20), metabolomics = c(10, 10))
+
+diablo_model <- block.splsda(X, Y, ncomp = 2, keepX = keepX, design = design)
+```
+
+## 📈 Visualization
+
+```{r, fig.width=10, fig.height=8}
+plotIndiv(diablo_model, legend = TRUE, title = "Sample Clustering by DIABLO")
+plotVar(diablo_model, var.names = TRUE, legend = TRUE)
+circosPlot(diablo_model, cutoff = 0.3)
+network(diablo_model, cutoff = 0.3)
+```
+
+## ✅ Performance Evaluation
+
+```{r}
+perf_diablo <- perf(diablo_model, validation = "Mfold", folds = 5, nrepeat = 10)
+plot(perf_diablo)
+```
+
+##  Extract Biomarker Signatures
+
+```{r}
+selected <- selectVar(diablo_model, comp = 1)
+
+top_genes <- selected$mRNA$name
+top_proteins <- selected$proteomics$name
+top_metabolites <- selected$metabolomics$name
+
+top_genes
+top_proteins
+top_metabolites
+```
+
+## Next Steps (Suggestions)
+
+- Run GSEA or pathway enrichment on selected genes.
+- Use STRING or Cytoscape for PPI network analysis.
+- Upload metabolite list to MetaboAnalyst for interpretation.
+- Validate biomarker panel on independent dataset.

@@ -1,0 +1,86 @@
+---
+title: "MOFA+ Multi-Omics Biomarker Discovery for Glaucoma"
+author: "tjmb03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Introduction
+
+This R Markdown demonstrates a real-world multi-omics biomarker discovery workflow using **MOFA+** on a dataset from the `curatedTCGAData` package. 
+
+Here we simulate glaucoma biomarker discovery using Colon Adenocarcinoma (COAD) data as a proxy because it includes transcriptomic and proteomic data modalities.
+
+## 1. Install and Load Required Packages
+
+```{r install-packages, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(c("MOFA2", "MultiAssayExperiment", "curatedTCGAData", "ExperimentHub", "SummarizedExperiment"))
+```
+
+```{r load-packages}
+library(MOFA2)
+library(MultiAssayExperiment)
+library(curatedTCGAData)
+library(SummarizedExperiment)
+```
+
+## 2. Load Multi-Omics Data (TCGA-COAD)
+
+```{r load-data}
+mae <- curatedTCGAData("COAD", assays = c("RNASeq2GeneNorm", "RPPAArray"), version = "1.1.38", dry.run = FALSE)
+
+rna <- assays(mae[["COAD_RNASeq2GeneNorm-20160128"]])[[1]]
+prot <- assays(mae[["COAD_RPPAArray-20160128"]])[[1]]
+
+# 1. Check that all columns are numeric or coercible
+is_numeric <- all(sapply(prot, is.numeric))
+print(is_numeric)
+
+# 2. Convert to matrix
+prot<- as.matrix(prot)
+rna<- as.matrix(rna)
+
+# Convert column names to a vector
+colnames(prot) <- substr(colnames(prot), 1, 12)
+colnames(rna) <- substr(colnames(rna), 1, 12)
+
+
+
+common_samples <- intersect(colnames(prot), colnames(rna))
+
+
+
+rna <- rna[, common_samples]
+prot <- prot[, common_samples]
+
+data_list <- list(RNA = as.matrix(rna), Proteomics = as.matrix(prot))
+```
+
+## 3. Build and Train MOFA Model
+
+```{r build-train-mofa}
+MOFAobject <- create_mofa(data_list)
+
+model_opts <- get_default_model_options(MOFAobject)
+train_opts <- get_default_training_options(MOFAobject)
+train_opts$maxiter <- 1000
+
+mofa_ready <- prepare_mofa(MOFAobject, model_options = model_opts, training_options = train_opts)
+mofa_model <- run_mofa(mofa_ready, use_basilisk = TRUE)
+```
+
+## 4. Plot Latent Factors
+
+```{r plot-factors}
+summary(mofa_model)
+plot_factors(mofa_model)
+```
+
+## 5. Summary
+
+MOFA+ provides interpretable low-dimensional factors integrating transcriptomic and proteomic variation. This can help stratify patients and discover candidate biomarkers in glaucoma when real data is used.

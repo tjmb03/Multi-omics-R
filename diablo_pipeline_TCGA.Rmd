@@ -1,0 +1,102 @@
+
+---
+title: "DIABLO-based Multi-Omics Biomarker Discovery"
+author: "tjmb03"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 📦 Load Packages
+
+```{r}
+# Install and load mixOmics
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("mixOmics")
+
+library(mixOmics)
+```
+
+## 📂 Load and Prepare Data
+
+```{r}
+# Load example data from mixOmics
+data("breast.TCGA")
+
+X <- list(
+  mRNA = breast.TCGA$data.train$mrna,
+  miRNA = breast.TCGA$data.train$mirna,
+  proteomics = breast.TCGA$data.train$protein
+)
+
+Y <- breast.TCGA$data.train$subtype
+```
+
+## 🔧 Define Design Matrix
+
+```{r}
+design <- matrix(1, ncol = length(X), nrow = length(X),
+                 dimnames = list(names(X), names(X)))
+diag(design) <- 0
+```
+
+## ⚙️ Run DIABLO
+
+```{r}
+list.keepX <- list(mRNA = c(50, 50), miRNA = c(20, 20), proteomics = c(10, 10))
+diablo_model <- block.splsda(X, Y, ncomp = 2, keepX = list.keepX, design = design)
+```
+
+## 📈 Visualization
+
+```{r, fig.width=10, fig.height=8}
+plotIndiv(diablo_model, ind.names = FALSE, legend = TRUE, title = 'DIABLO - sample plot')
+plotVar(diablo_model, var.names = TRUE, legend = TRUE)
+circosPlot(diablo_model, cutoff = 0.7)
+network(diablo_model, cutoff = 0.7)
+```
+
+## ✅ Performance Assessment
+
+```{r}
+# Cross-validation
+perf_diablo <- perf(diablo_model, validation = 'Mfold', folds = 5, nrepeat = 10)
+plot(perf_diablo)
+
+
+# Predict
+pred <- predict(diablo_model, newdata = list(
+  mRNA = breast.TCGA$data.test$mrna,
+  miRNA = breast.TCGA$data.test$mirna
+))
+
+factor(pred$class$max.dist$miRNA)
+factor(breast.TCGA$data.test$subtype)
+
+common_samples <- intersect(factor(pred$class$max.dist$miRNA), factor(breast.TCGA$data.test$subtype))
+common_samples
+
+
+# Compute confusion matrix
+confusion <- get.confusion_matrix(predicted = pred$class$max.dist$miRNA[common_samples], truth = breast.TCGA$data.test$subtype[common_samples])
+
+confusion
+```
+
+## 🧬 Extract Biomarkers
+
+```{r}
+selected_features <- selectVar(diablo_model, comp = 1)
+selected_features$mRNA$name
+selected_features$miRNA$name
+selected_features$proteomics$name
+```
+
+## 📘 Notes
+
+This R Markdown demonstrates DIABLO-based supervised multi-omics integration using the `mixOmics` R package. Customize input data and feature selection for your specific study design.

@@ -1,0 +1,327 @@
+
+```{r}
+# Step 0: Install Required Packages
+```
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install(c("TCGAbiolinks", "SummarizedExperiment", "iClusterPlus", "pheatmap"), ask = FALSE)
+BiocManager::install(c("sesame", "sesameData"))
+
+
+```
+```{r}
+# Step 1: Load Libraries
+```
+```{r}
+library(TCGAbiolinks)
+library(SummarizedExperiment)
+library(iClusterPlus)
+library(pheatmap)
+library(sesameData)
+library(sesame)
+```
+```{r}
+# Step 2: Download TCGA-BRCA Data
+```
+```{r}
+
+# RNA-seq data
+query_exp <- GDCquery(
+  project = "TCGA-BRCA",
+  data.category = "Transcriptome Profiling",
+  data.type = "Gene Expression Quantification",
+  workflow.type = "STAR - Counts",
+  sample.type = "Primary Tumor"
+)
+
+# Step 1: Define a small sample size
+n_samples <- 30
+
+# Select first 30 barcodes
+GDCquery_project_samples <- getResults(query_exp, cols = "cases.submitter_id")
+selected_barcodes <- unique(GDCquery_project_samples)[1:n_samples]
+
+# Re-run query using selected barcodes
+query_exp <- GDCquery(
+  project = "TCGA-BRCA",
+  data.category = "Transcriptome Profiling",
+  data.type = "Gene Expression Quantification",
+  workflow.type = "STAR - Counts",
+  sample.type = "Primary Tumor",
+  barcode = selected_barcodes
+)
+
+
+GDCdownload(query_exp)
+exp_se <- GDCprepare(query = query_exp)
+
+# DNA methylation data (450k platform)
+query_meth <- GDCquery(
+  project = "TCGA-BRCA",
+  data.category = "DNA Methylation",
+  data.type = "Methylation Beta Value",  # <- specify one type only
+  platform = "Illumina Human Methylation 450",
+  sample.type = "Primary Tumor"
+)
+
+# Get all methylation cases and match by patient ID
+meth_cases <- getResults(query_meth, cols = "cases.submitter_id")
+matched_barcodes <- intersect(meth_cases, selected_barcodes)
+
+# Re-query methylation with only matched barcodes
+query_meth <- GDCquery(
+  project = "TCGA-BRCA",
+  data.category = "DNA Methylation",
+  data.type = "Methylation Beta Value",  # <- specify one type only
+  platform = "Illumina Human Methylation 450",
+  sample.type = "Primary Tumor",
+  barcode = matched_barcodes
+)
+
+GDCdownload(query_meth)
+meth_se <- GDCprepare(query = query_meth)
+
+```
+```{r}
+# Step 3: Extract and Process Matrices
+```
+```{r}
+
+# Expression matrix (genes x samples)
+expr_mat <- assay(exp_se)
+colnames(expr_mat) <- substr(colnames(expr_mat), 1, 16)
+
+# Methylation matrix (probes x samples)
+meth_mat <- assay(meth_se)
+colnames(meth_mat) <- substr(colnames(meth_mat), 1, 16)
+
+```
+```{r}
+# Step 4: Match Samples Across Omics
+```
+```{r}
+
+common_samples <- intersect(colnames(expr_mat), colnames(meth_mat))
+expr_mat <- expr_mat[, common_samples]
+meth_mat <- meth_mat[, common_samples]
+
+# Optional: Feature filtering (reduce dimension)
+# Select top variable genes/probes
+top_var_genes <- head(order(apply(expr_mat, 1, var), decreasing = TRUE), 500)
+top_var_meth <- head(order(apply(meth_mat, 1, var), decreasing = TRUE), 500)
+
+expr_mat <- expr_mat[top_var_genes, ]
+meth_mat <- meth_mat[top_var_meth, ]
+
+# Scale the data (z-score)
+expr_scaled <- t(scale(t(expr_mat)))
+meth_scaled <- t(scale(t(meth_mat)))
+
+```
+```{r}
+# Step 5: Run iClusterPlus
+```
+```{r}
+data_list <- list(expr = t(expr_scaled), meth = t(meth_scaled))
+
+set.seed(123)
+fit <- iClusterPlus(
+  dt1 = data_list$expr,
+  dt2 = data_list$meth,
+  type = c("gaussian", "gaussian"),
+  lambda = c(0.03, 0.05)
+)
+
+
+```
+```{r}
+# Step 6: Analyze and Visualize Results
+```
+```{r}
+clusters <- fit$clusters
+table(clusters)
+
+# Combine omics for heatmap visualization
+combined_mat <- rbind(expr_scaled[1:100, ], meth_scaled[1:100, ]) # select 100 from each for display
+annotation <- data.frame(Cluster = as.factor(clusters))
+rownames(annotation) <- colnames(combined_mat)
+
+
+str(annotation)
+table(annotation$cluster)
+
+
+pheatmap(combined_mat[, order(clusters)],
+         annotation_col = annotation,
+         cluster_cols = FALSE,
+         show_colnames = FALSE,
+         show_rownames = FALSE,
+         main = "iClusterPlus Clustering Heatmap")
+
+library(ggplot2)
+names(clusters) <- colnames(combined_mat)
+# Prepare data.frame for plotting
+latent_df <- data.frame(
+  Sample = names(clusters),
+  Z1 = fit$meanZ[,1],
+  Z2 = fit$meanZ[,2],
+  Cluster = as.factor(clusters)
+)
+
+# Scatterplot of first two latent components colored by cluster
+ggplot(latent_df, aes(x = Z1, y = Z2, color = Cluster)) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  labs(title = "iClusterPlus: Samples projected on first two latent variables",
+       x = "Latent variable 1", y = "Latent variable 2")
+
+
+
+
+# Extract beta (feature loadings) from iClusterPlus
+# Example: get the beta matrix for gene expression data (dt1)
+beta_expr <- fit$beta[[1]]
+
+rownames(beta_expr) <- rownames(expr_scaled)
+
+
+# Check if it's a matrix
+str(beta_expr)
+# Check dimensions
+dim(beta_expr)  # Should print something like 5000 x 2
+
+
+# Step 1: Get top 50 features by absolute value of loadings on latent factor 1
+top_features_idx <- order(abs(beta_expr[, 1]), decreasing = TRUE)[1:50]
+
+# Step 2: Extract those top features
+top_beta <- beta_expr[top_features_idx, , drop = FALSE]
+
+# Step 3: Optional – give meaningful colnames
+colnames(top_beta) <- c("Latent_Factor_1", "Latent_Factor_2")
+
+# Step 4: Plot heatmap
+pheatmap(top_beta,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         main = "Top 50 Feature Loadings on Latent Factors")
+
+
+pheatmap(top_beta,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         main = "Top 50 feature loadings (beta) from iClusterPlus")
+
+# Install biomaRt if not already installed
+if (!requireNamespace("biomaRt", quietly = TRUE)) {
+  install.packages("BiocManager")
+  BiocManager::install("biomaRt")
+}
+
+# Load the library
+library(biomaRt)
+
+# Use Ensembl database
+ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl")
+
+# Extract the Ensembl IDs (strip versions, e.g., ".1", ".14", etc.)
+ens_ids <- gsub("\\..*$", "", rownames(beta_expr))  # strip version numbers
+
+# Query Ensembl to map to gene symbols
+gene_map <- getBM(
+  attributes = c("ensembl_gene_id", "hgnc_symbol"),
+  filters = "ensembl_gene_id",
+  values = ens_ids,
+  mart = ensembl
+)
+
+sum(ens_ids %in% gene_map$ensembl_gene_id)
+missing_id <- ens_ids[!(ens_ids %in% gene_map$ensembl_gene_id)]
+missing_id
+
+mart <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl")
+
+# Check if this gene is available
+getBM(attributes = c("ensembl_gene_id", "external_gene_name", "gene_biotype"),
+      filters = "ensembl_gene_id",
+      values = "ENSG00000112096",
+      mart = mart)
+
+
+# Merge back with beta_expr
+rownames(beta_expr) <- gsub("\\..*$", "", rownames(beta_expr))  # match to query
+beta_expr_annotated <- merge(
+  data.frame(ensembl_gene_id = rownames(beta_expr), beta_expr),
+  gene_map,
+  by = "ensembl_gene_id"
+)
+
+# Optional: move hgnc_symbol to rownames and clean up
+rownames(beta_expr_annotated) <- ifelse(beta_expr_annotated$hgnc_symbol != "",
+                                        beta_expr_annotated$hgnc_symbol,
+                                        beta_expr_annotated$ensembl_gene_id)
+beta_expr_annotated$ensembl_gene_id <- NULL
+beta_expr_annotated$hgnc_symbol <- NULL
+
+# View
+head(beta_expr_annotated)
+
+# Get top 100 features for latent factor 1
+
+top_features_annotated <- rownames(beta_expr_annotated)[
+  order(abs(beta_expr_annotated[,1]), decreasing = TRUE)[1:100]
+]
+
+# install.packages("enrichR")  # if not already
+install.packages("enrichR") 
+library(enrichR)
+
+# Available databases
+dbs <- c("KEGG_2021_Human", "GO_Biological_Process_2021", "Reactome_2022")
+
+# Run enrichment
+enrich_results <- enrichr(top_features_annotated, databases = dbs)
+
+# View results
+enrich_results[["KEGG_2021_Human"]] |> head()
+
+
+library(ggplot2)
+
+# Extract the KEGG enrichment table
+kegg_res <- enrich_results[["KEGG_2021_Human"]]
+
+# Take top 10 pathways sorted by Adjusted P-value
+top_kegg <- head(kegg_res[order(kegg_res$Adjusted.P.value), ], 10)
+
+# Make sure terms are factors with levels in plotting order
+top_kegg$Term <- factor(top_kegg$Term, levels = rev(top_kegg$Term))
+
+# Plot: Barplot of -log10(Adjusted P-value)
+ggplot(top_kegg, aes(x = Term, y = -log10(Adjusted.P.value))) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # horizontal bars
+  labs(title = "Top 10 KEGG Pathways by Adjusted P-value",
+       y = "-log10(Adjusted P-value)",
+       x = "") +
+  theme_minimal()
+
+```
+```{r}
+# Step 7: Optional – Save results
+```
+```{r}
+write.csv(clusters, "iclusterplus_clusters.csv", quote = FALSE)
+saveRDS(fit, "iclusterplus_fit.rds")
+```
+
+
+
+---
+title: icluster-tcga.R
+author: bma
+date: '2025-09-03'
+
+---

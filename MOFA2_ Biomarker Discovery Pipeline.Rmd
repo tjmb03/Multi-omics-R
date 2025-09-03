@@ -1,0 +1,100 @@
+
+---
+title: "MOFA+ Multi-Omics Biomarker Discovery Pipeline"
+author: "tjmb03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## 📦 Load Required Packages
+
+```{r}
+BiocManager::install("MOFA2")
+library(reticulate)
+library(MOFA2)
+library(data.table)
+library(ggplot2)
+library(dplyr)
+```
+
+## 🧬 Load and Prepare Multi-Omics Data
+
+```{r}
+# Example: Simulated multi-omics data (mRNA, miRNA, methylation)
+data_list <- list(
+  mRNA = matrix(rnorm(2000), nrow = 100, ncol = 20),
+  miRNA = matrix(rnorm(1000), nrow = 50, ncol = 20),
+  meth = matrix(rnorm(1500), nrow = 75, ncol = 20)
+)
+
+# Set sample names
+sample_names <- paste0("sample", 1:20)
+for (view in names(data_list)) {
+  colnames(data_list[[view]]) <- sample_names
+}
+```
+
+## 🧱 Create MOFA object
+
+```{r}
+MOFAobject <- create_mofa(data_list)
+```
+
+## ⚙️ Define Model Options
+
+```{r}
+model_opts <- get_default_model_options(MOFAobject)
+model_opts$num_factors <- 5
+```
+
+## ⚙️ Define Training Options
+
+```{r}
+train_opts <- get_default_training_options(MOFAobject)
+train_opts$convergence_mode <- "medium"
+train_opts$maxiter <- 1000
+```
+
+## 🛠️ Prepare and Train the Model
+
+```{r}
+
+# Prepare model
+mofa_ready <-  prepare_mofa(MOFAobject, 
+                                 model_options = model_opts,
+                                 training_options = train_opts)
+```
+
+
+```{r}
+# Run training
+mofa_model <- run_mofa(mofa_ready, use_basilisk = TRUE)
+```
+
+## 📊 Visualize Latent Factors
+
+```{r}
+plot_factors(mofa_model, color_by = "group")
+summary(mofa_model)
+```
+
+## 🧬 Feature Weights and Biomarker Discovery
+
+```{r}
+# Identify top features per factor
+top_weights <- get_weights(MOFAobject, view = "mRNA", factors = 1, as.data.frame = TRUE)
+top_weights <- top_weights %>% arrange(desc(abs(value))) %>% head(20)
+print(top_weights)
+```
+
+## 💾 Save MOFA Model
+
+```{r}
+save_model(MOFAobject, file = "MOFAmodel_glaucoma.hdf5")
+```
