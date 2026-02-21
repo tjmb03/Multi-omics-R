@@ -15,9 +15,9 @@ Designed as a professional systems biology toolkit rather than standalone script
 
 ---
 
-# Repository Structure
+# Multi-Omics Analysis Suite — Shiny App
 
-<img width="401" height="284" alt="Screenshot 2026-02-14 at 12 08 57 PM" src="https://github.com/user-attachments/assets/5a633b21-ec38-499f-b8ee-8201ff29af1f" />
+A unified, dark-themed Shiny web application for running five multi-omics integration workflows on paired transcriptomics and proteomics data, with live progress tracking, parameter controls, and HTML/PDF report export.
 
 
 ---
