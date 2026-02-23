@@ -31,6 +31,22 @@ The app provides a single browser-based interface to run five published multi-om
 | 4 | **WGCNA** | Unsupervised · Network Analysis | Weighted Gene Co-expression Network Analysis — module detection and hub gene identification |
 | 5 | **Bayesian Network** | Probabilistic · Causal Inference | Hill-climbing DAG search with bootstrap edge strength for gene-protein-clinical causal graphs |
 
+## Memory requirements and per-workflow limits
+shinyapps.io containers are **hard-capped at 1 GB RAM** (free and starter tiers). The Shiny process + loaded R packages consume ~400–600 MB at startup, leaving only 400–600 MB for analysis.
+
+| Workflow | RAM usage | shinyapps.io | Notes |
+|---|---|---|---|
+| **DIABLO** | ~300–500 MB | ✓ Works | CV tuning is the heaviest step — reduce `cv_folds` to 3 and `nrepeat` to 3 if it OOMs |
+| **iClusterPlus** | ~200–400 MB | ✓ Works | Use `n_lambda = 8` (fastest) and `top_genes <= 500` |
+| **WGCNA** | ~500 MB – 2 GB | ⚠ Borderline | Use `minModuleSize >= 20` and top 2000 genes. May OOM on free tier with default settings |
+| **Bayesian Network** | ~200–400 MB | ✓ Works | Keep `n_genes <= 20` and `bootstrap_R <= 50` |
+| **MOFA2** | > 1 GB | ✗ OOM kill | See below |
+
+#### MOFA2 cannot run on shinyapps.io
+
+MOFA2 requires `mofapy2`, a Python package installed at runtime via **basilisk**. On a fresh shinyapps.io container, basilisk downloads ~200 MB of conda + mofapy2 before training can start. This exceeds the 1 GB container limit and triggers an **OOM kill** — the OS terminates the entire container instantly, bypassing R's error handling entirely. So the minimum to avoid OOM when running MOFA2 is probably 2 GB, with 4 GB being comfortable.
+
+
 
 ## Input Data Files
 
