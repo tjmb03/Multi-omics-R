@@ -19,7 +19,7 @@ Designed as a professional systems biology toolkit rather than standalone script
 
 A unified, dark-themed Shiny web application for running five multi-omics integration workflows on paired transcriptomics and proteomics data, with live progress tracking, parameter controls, and HTML/PDF report export.
 
-
+See its [folder](https://github.com/tjmb03/Multi-omics-R/tree/main/Multi-Omics%20Analysis%20Suite%20%E2%80%94%20ShinyApp) for scripts and usage details.
 ---
 
 # Core Modules
