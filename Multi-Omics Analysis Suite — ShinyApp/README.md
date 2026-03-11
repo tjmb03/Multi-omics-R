@@ -140,7 +140,7 @@ BiocManager::install(c(
 | Parameter | Range | Default | Notes |
 |---|---|---|---|
 | Minimum Module Size | 5–100 | 10 | Keep 10–20 with small n |
-| Merge Cut Height | 0.10–0.50 | 0.25 | Lower = more merging |
+| Merge Cut Height | 0.10–0.50 | 0.25 | Lower = less merging |
 | Deep Split | 0–4 | 2 | Higher = more aggressive splitting |
 | Soft Power (0 = auto) | 0–20 | 0 | Auto-selects power for scale-free R2 >= 0.80 |
 
