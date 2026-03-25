@@ -174,4 +174,6 @@ Reports are named `WORKFLOW_report_YYYYMMDD_HHMMSS.html/.pdf`.
 - MOFA2 1.12+ (Bioconductor 3.18)
 - mixOmics 6.26+, iClusterPlus 1.38+
 - WGCNA 1.72+, bnlearn 4.9+
+> © 2026 tjmb03. This project is provided for educational and methodological
+demonstration purposes. Source code for the interactive dashboards is **available on request** for academic and research use.
 
